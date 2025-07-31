@@ -6,9 +6,6 @@ import { useSelector } from "react-redux";
 import LocationWeather from "@/Components/LocationWeather";
 import axios from "axios";
 import { toast } from "react-toastify";
-import NotificationService from "@/services/notificationService";
-import { isAuthenticated, logout } from "@/utils/authHelper";
-import { useRouter } from "next/router";
 
 interface User {
   name: string;
@@ -18,12 +15,8 @@ interface User {
 
 const index = () => {
   const user = useSelector(selectuser);
-  const router = useRouter();
   const [notificationEnabled, setNotificationEnabled] = useState(true);
-  const [notificationSupported, setNotificationSupported] = useState(false);
-  const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>('default');
-  const [isLoading, setIsLoading] = useState(true); // Start as loading
-  const [lastStatus, setLastStatus] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   // Check authentication on page load
@@ -32,7 +25,7 @@ const index = () => {
       const token = localStorage.getItem('token');
       if (!token) {
         toast.error('Session expired. Please login.');
-        router.push('/user-auth');
+        window.location.href = '/user-auth';
         return;
       }
       setIsAuthenticated(true);
@@ -40,21 +33,6 @@ const index = () => {
     };
     
     checkAuth();
-  }, [router]);
-
-  useEffect(() => {
-    const notificationService = NotificationService.getInstance();
-    setNotificationSupported(notificationService.isSupported());
-    setPermissionStatus(notificationService.getPermission());
-    console.log('[Profile] Notification supported:', notificationService.isSupported());
-    console.log('[Profile] Notification permission:', notificationService.getPermission());
-
-    if (notificationService.isSupported() && notificationService.getPermission() === 'default') {
-      notificationService.requestPermission().then((granted) => {
-        setPermissionStatus(granted ? 'granted' : 'denied');
-        console.log('[Profile] Permission requested, granted:', granted);
-      });
-    }
   }, []);
 
   // Check authentication and fetch notification preferences
@@ -67,29 +45,6 @@ const index = () => {
       setNotificationEnabled(true); // Default to enabled
     }
   }, [isAuthenticated]);
-
-  useEffect(() => {
-    if (!notificationEnabled || !user?.email) return;
-    const interval = setInterval(async () => {
-      try {
-        // Use email as userId for polling
-        const res = await fetch(`http://localhost:5000/api/application/status/${encodeURIComponent(user.email)}`);
-        const data = await res.json();
-        if (data.status && data.status !== lastStatus && (data.status === 'accepted' || data.status === 'rejected')) {
-          // Show notification
-          NotificationService.getInstance().showNotification({
-            type: data.status === 'accepted' ? 'accepted' : 'rejected',
-            title: 'Your Application',
-            company: 'Intern Area'
-          });
-        }
-        setLastStatus(data.status);
-      } catch (error) {
-        // Optionally handle error
-      }
-    }, 10000); // every 10 seconds
-    return () => clearInterval(interval);
-  }, [notificationEnabled, user?.email, lastStatus]);
 
   const fetchUserNotificationPreference = async () => {
     try {
@@ -130,7 +85,7 @@ const index = () => {
           toast.error('Authentication failed. Please login again.');
           // Clear invalid token and redirect
           localStorage.removeItem('token');
-          router.push('/user-auth');
+          window.location.href = '/user-auth';
         } else {
           toast.error('Failed to fetch user preferences');
         }
@@ -146,27 +101,8 @@ const index = () => {
   };
 
   const handleNotificationToggle = async () => {
-    if (!notificationSupported) {
-      toast.error('Notifications are not supported in this browser');
-      return;
-    }
-    if (permissionStatus === 'denied') {
-      toast.error('Please enable notifications in your browser settings');
-      return;
-    }
     setIsLoading(true);
     try {
-      const notificationService = NotificationService.getInstance();
-      if (permissionStatus === 'default') {
-        const granted = await notificationService.requestPermission();
-        if (!granted) {
-          toast.error('Notification permission denied');
-          setIsLoading(false);
-          return;
-        }
-        setPermissionStatus('granted');
-        console.log('[Profile] Permission granted after toggle');
-      }
       const newValue = !notificationEnabled;
       const token = localStorage.getItem('token');
       if (!token) {
@@ -186,6 +122,8 @@ const index = () => {
       );
       console.log('[Profile] Updated notificationEnabled to:', newValue);
       setNotificationEnabled(newValue);
+      // Save to localStorage for immediate access
+      localStorage.setItem('notificationEnabled', newValue.toString());
       toast.success(newValue ? 'Notifications enabled' : 'Notifications disabled');
     } catch (error: any) {
       console.error('[Profile] Error updating notification settings:', error);
@@ -199,7 +137,7 @@ const index = () => {
         if (error.response.status === 401) {
           toast.error('Authentication failed. Please login again.');
           localStorage.removeItem('token');
-          router.push('/user-auth');
+          window.location.href = '/user-auth';
         } else {
           toast.error('Failed to update notification settings');
         }
@@ -230,7 +168,7 @@ const index = () => {
         <div className="text-center">
           <p className="text-red-600 mb-4">Authentication required</p>
           <button 
-            onClick={() => router.push('/user-auth')}
+            onClick={() => window.location.href = '/user-auth'}
             className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
           >
             Go to Login
@@ -304,33 +242,20 @@ const index = () => {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-3">
-                    {!notificationSupported && (
-                      <span className="text-xs text-red-500">Not supported</span>
-                    )}
-                    {permissionStatus === 'denied' && (
-                      <span className="text-xs text-red-500">Permission denied</span>
-                    )}
-                    <button
-                      onClick={handleNotificationToggle}
-                      disabled={!notificationSupported || permissionStatus === 'denied' || isLoading}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                        notificationEnabled ? 'bg-blue-600' : 'bg-gray-200'
-                      } ${(!notificationSupported || permissionStatus === 'denied' || isLoading) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          notificationEnabled ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
+                  <button
+                    onClick={handleNotificationToggle}
+                    disabled={isLoading}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                      notificationEnabled ? 'bg-blue-600' : 'bg-gray-200'
+                    } ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        notificationEnabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
                 </div>
-                {permissionStatus === 'denied' && (
-                  <p className="mt-2 text-xs text-red-500">
-                    Please enable notifications in your browser settings to receive updates
-                  </p>
-                )}
               </div>
 
               {/* Location and Weather Section */}

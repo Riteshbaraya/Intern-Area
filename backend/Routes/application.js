@@ -98,6 +98,25 @@ router.put("/:id", authMiddleware(['admin']), async (req, res) => {
       console.log("Error fetching job/internship title:", error);
     }
 
+    // EMIT SOCKET EVENT FOR REAL-TIME NOTIFICATION
+    const io = req.app.get("io");
+    if (io && updateapplication.user && updateapplication.user.email) {
+      const userEmail = updateapplication.user.email;
+      
+      io.to(userEmail).emit('application-status-changed', {
+        email: userEmail,
+        status: status, // 'accepted' or 'rejected'
+        title: jobTitle
+      });
+      
+      console.log("🔔 EMITTING to user:", userEmail, "Status:", status, "Title:", jobTitle);
+    } else {
+      console.error("❌ Socket.io instance not found or user.email missing");
+      console.error("io exists:", !!io);
+      console.error("user exists:", !!updateapplication.user);
+      console.error("user.email exists:", !!(updateapplication.user && updateapplication.user.email));
+    }
+
     // Include notification data in response
     const responseData = {
       success: true,
@@ -114,6 +133,7 @@ router.put("/:id", authMiddleware(['admin']), async (req, res) => {
 
     res.status(200).json(responseData);
   } catch (error) {
+    console.error("Error updating application:", error);
     res.status(500).json({ error: "internal server error" });
   }
 });

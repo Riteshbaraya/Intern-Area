@@ -11,7 +11,6 @@ import { login, logout } from "@/Feature/Userslice";
 import { loginSuccess, logout as jwtLogout } from "@/Feature/AuthSlice";
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import NotificationService from "@/services/notificationService";
 
 export default function App({ Component, pageProps }: AppProps) {
   function AuthListener() {
@@ -57,15 +56,6 @@ export default function App({ Component, pageProps }: AppProps) {
           dispatch(logout());
         }
       });
-
-      // Initialize notification service
-      const notificationService = NotificationService.getInstance();
-      if (notificationService.isSupported() && notificationService.getPermission() === 'default') {
-        // Request permission after a short delay to avoid blocking the UI
-        setTimeout(() => {
-          notificationService.requestPermission();
-        }, 2000);
-      }
     }, [dispatch]);
     
     return null;

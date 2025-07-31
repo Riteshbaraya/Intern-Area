@@ -12,8 +12,9 @@ import Link from "next/link";
 import axios from "axios";
 import { selectuser } from "@/Feature/Userslice";
 import { useSelector } from "react-redux";
-import NotificationService, { NotificationData } from "@/services/notificationService";
 import { toast } from "react-toastify";
+import { io } from "socket.io-client";
+import { showNotification } from "@/services/notificationService";
 
 interface Application {
   _id: string;
@@ -54,6 +55,7 @@ const Applications = [
     status: "rejected",
   },
 ];
+
 const getStatusColor = (status: any) => {
   switch (status.toLowerCase()) {
     case "approved":
@@ -64,6 +66,7 @@ const getStatusColor = (status: any) => {
       return "bg-yellow-100 text-yellow-800";
   }
 };
+
 const index = () => {
   const [searchTerm, setsearchTerm] = useState("");
   const [filter, setFilter] = useState("all");
@@ -71,90 +74,98 @@ const index = () => {
   const [data, setdata] = useState<Application[]>([]);
   const [notificationEnabled, setNotificationEnabled] = useState(true);
   const user = useSelector(selectuser);
-  // Use a ref to persist status map across renders without causing rerenders
-  const lastStatusMap = useRef<{ [id: string]: string }>({});
 
+  // Ask for Notification permission on first login
   useEffect(() => {
-    // Fetch notificationEnabled from profile
+    if (Notification.permission !== "granted") {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  // Fetch notification preference from localStorage or API
+  useEffect(() => {
     const fetchNotificationPref = async () => {
       try {
+        // First check localStorage
+        const localPref = localStorage.getItem('notificationEnabled');
+        if (localPref !== null) {
+          setNotificationEnabled(localPref === 'true');
+          return;
+        }
+
+        // Fallback to API if localStorage is not set
         const token = localStorage.getItem('token');
         if (!token) return;
+        
         const response = await axios.get('http://localhost:5000/api/user/profile', {
           headers: { Authorization: `Bearer ${token}` }
         });
-        setNotificationEnabled(response.data.notificationEnabled ?? true);
-        console.log('[UserApp] notificationEnabled from API:', response.data.notificationEnabled);
+        const apiPref = response.data.notificationEnabled ?? true;
+        setNotificationEnabled(apiPref);
+        localStorage.setItem('notificationEnabled', apiPref.toString());
       } catch (error) {
-        console.error('[UserApp] Error fetching notificationEnabled:', error);
+        console.error('[UserApp] Error fetching notification preference:', error);
+        // Default to enabled if API fails
+        setNotificationEnabled(true);
+        localStorage.setItem('notificationEnabled', 'true');
       }
     };
     fetchNotificationPref();
   }, []);
 
+  // WebSocket connection for real-time notifications
+  useEffect(() => {
+    if (!user?.email) return;
+
+    const socket = io("http://localhost:5000", {
+      transports: ["websocket"],
+      withCredentials: true,
+    });
+
+    socket.emit("join", user.email);
+
+    socket.on("application-status-changed", (data) => {
+      console.log("🔔 Event received", data);
+
+      // Update UI state immediately
+      setdata(prev => prev.map(app => 
+        app._id === data.applicationId ? { ...app, status: data.status } : app
+      ));
+
+      // Show notification if conditions are met
+      if (Notification.permission === "granted" && notificationEnabled) {
+        const title = data.status === "accepted" ? "🎉 You're Hired!" : "❌ Application Rejected";
+        const body = `Status: ${data.status.toUpperCase()} for ${data.title}`;
+        
+        showNotification(title, body);
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [user?.email, notificationEnabled]);
+
+  // Fetch applications data (only once, no polling)
   useEffect(() => {
     const fetchdata = async () => {
       try {
         setLoading(true);
-        console.log('[UserApp] Current user:', user);
         if (user) {
           const userIdentifier = user.uid || user.email;
           if (userIdentifier) {
             const res = await axios.get(`http://localhost:5000/api/application/user/${encodeURIComponent(userIdentifier)}`);
-            const apps = res.data;
-            console.log('[UserApp] API response:', apps);
-            console.log('[UserApp] Application statuses:', apps.map((app: Application) => app.status));
-            // Notification logic: only notify if status changed to accepted/rejected
-            apps.forEach((app: Application) => {
-              const prevStatus = lastStatusMap.current[app._id];
-              console.log(`[DEBUG] App: ${app._id}, prevStatus: ${prevStatus}, currentStatus: ${app.status}`);
-              if (
-                (app.status === "accepted" || app.status === "rejected") &&
-                prevStatus !== undefined && // Only notify if we've seen this app before
-                prevStatus !== app.status
-              ) {
-                NotificationService.getInstance().showNotification({
-                  type: app.status,
-                  title: app.category || 'Job Application', // Use category as job title
-                  company: app.company,
-                });
-                console.log("[DEBUG] Notification for status change:", app._id, prevStatus, "->", app.status);
-              }
-              // Always update the status map
-              lastStatusMap.current[app._id] = app.status;
-            });
-            setdata(apps);
-          } else {
-            console.log('[UserApp] No user identifier found (uid or email)');
+            setdata(res.data);
           }
-        } else {
-          console.log('[UserApp] No user data found');
         }
       } catch (error) {
-        console.log('[UserApp] Error fetching applications:', error);
+        console.error('[UserApp] Error fetching applications:', error);
       } finally {
         setLoading(false);
       }
     };
     fetchdata();
-    const interval = setInterval(fetchdata, 30000);
-    return () => clearInterval(interval);
-  }, [user, notificationEnabled]);
-
-  const changeBackgroundColor = (status: string) => {
-    const originalColor = document.body.style.backgroundColor;
-    
-    if (status === 'accepted') {
-      document.body.style.backgroundColor = '#dcfce7'; // Green background
-    } else if (status === 'rejected') {
-      document.body.style.backgroundColor = '#dbeafe'; // Blue background
-    }
-
-    // Reset after 4 seconds
-    setTimeout(() => {
-      document.body.style.backgroundColor = originalColor;
-    }, 4000);
-  };
+  }, [user]);
 
   // Map UI filter keys to actual status values in the database
   const statusMap: Record<string, string | null> = {
@@ -174,6 +185,7 @@ const index = () => {
     const mappedStatus = statusMap[filter];
     return searchmatch && mappedStatus && application.status && application.status.toLowerCase() === mappedStatus;
   });
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -245,6 +257,7 @@ const index = () => {
               </div>
             </div>
           </div>
+
           {/* Applications List */}
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
