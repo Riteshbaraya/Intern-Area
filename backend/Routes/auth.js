@@ -59,6 +59,12 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email, password, otp } = req.body;
+    
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
+    
     const user = await User.findOne({ email });
     
     if (!user) {
@@ -98,42 +104,53 @@ router.post('/login', async (req, res) => {
       } else {
         // Generate and send OTP
         const otpCode = generateOTP();
-        await OTP.create({ email: user.email, otp: otpCode });
-        await sendOTPEmail(user.email, user.name, otpCode);
-        
+        await sendOTPEmail(user.email, otpCode);
         return res.status(200).json({ 
-          message: 'OTP sent to your email for Chrome verification',
-          requiresOTP: true,
-          email: user.email
+          message: 'OTP sent to your email',
+          requiresOTP: true 
         });
       }
     }
 
-    // Generate token for successful login
-    const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    
-    // Track login session
-    const ipInfo = await getIPInfo(req);
-    await LoginSession.create({
-      userId: user._id,
-      ipAddress: ipInfo.ip,
-      browser: userAgentInfo.browser,
-      os: userAgentInfo.os,
-      device: userAgentInfo.device,
-      userAgent: req.headers['user-agent'],
-      location: ipInfo.location
-    });
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: user._id, role: user.role, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
 
-    return res.json({ 
-      token, 
-      role: user.role, 
-      name: user.name, 
-      email: user.email,
-      requiresOTP: false
+    // Track login session
+    try {
+      const ipInfo = await getIPInfo(req.ip);
+      const loginSession = new LoginSession({
+        userId: user._id,
+        loginTime: new Date(),
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        location: ipInfo.location,
+        device: userAgentInfo.device,
+        browser: userAgentInfo.browser,
+        os: userAgentInfo.os
+      });
+      await loginSession.save();
+    } catch (trackingError) {
+      console.error('Login tracking error:', trackingError);
+      // Don't fail login if tracking fails
+    }
+
+    res.json({
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        notificationEnabled: user.notificationEnabled
+      }
     });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ message: 'Server error' });
+    console.error('Login error:', err);
+    return res.status(500).json({ message: 'Server error during login' });
   }
 });
 
@@ -189,6 +206,15 @@ router.post('/admin-login', async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
+    // Validate input
+    if (!password) {
+      return res.status(400).json({ message: 'Password is required' });
+    }
+
+    if (!username && !email) {
+      return res.status(400).json({ message: 'Username or email is required' });
+    }
+
     // Allow demo/dev login with hardcoded credentials
     if ((email === 'admin@example.com' || username === 'admin@example.com') && password === 'admin123') {
       const token = jwt.sign({ role: 'admin', email: 'admin@example.com', name: 'Admin' }, JWT_SECRET, { expiresIn: '7d' });
@@ -207,21 +233,29 @@ router.post('/admin-login', async (req, res) => {
       ],
       role: 'admin'
     });
+    
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials or not an admin' });
     }
+    
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
-    const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    
+    const token = jwt.sign({ id: user._id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
     return res.json({
       token,
-      user: { email: user.email, role: user.role, name: user.name }
+      user: { 
+        id: user._id,
+        email: user.email, 
+        role: user.role, 
+        name: user.name 
+      }
     });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ message: 'Server error' });
+    console.error('Admin login error:', err);
+    return res.status(500).json({ message: 'Server error during admin login' });
   }
 });
 

@@ -5,37 +5,38 @@ const { authMiddleware } = require("./auth");
 
 // Protected route - require admin authentication for creating internships
 router.post("/", authMiddleware(['admin']), async (req, res) => {
-  const Internshipdata = new Internship({
-    title: req.body.title,
-    company: req.body.company,
-    location: req.body.location,
-    category: req.body.category,
-    aboutCompany: req.body.aboutCompany,
-    aboutInternship: req.body.aboutInternship,
-    whoCanApply: req.body.whoCanApply,
-    perks: req.body.perks,
-    numberOfOpening: req.body.numberOfOpening,
-    stipend: req.body.stipend,
-    startDate: req.body.startDate,
-    additionalInfo: req.body.additionalInfo,
-  });
-  await Internshipdata.save()
-    .then((data) => {
-      res.send(data);
-    })
-    .catch((error) => {
-      console.log(error);
+  try {
+    const Internshipdata = new Internship({
+      title: req.body.title,
+      company: req.body.company,
+      location: req.body.location,
+      category: req.body.category,
+      aboutCompany: req.body.aboutCompany,
+      aboutInternship: req.body.aboutInternship,
+      whoCanApply: req.body.whoCanApply,
+      perks: req.body.perks,
+      numberOfOpening: req.body.numberOfOpening,
+      stipend: req.body.stipend,
+      startDate: req.body.startDate,
+      additionalInfo: req.body.additionalInfo,
     });
+    
+    const data = await Internshipdata.save();
+    res.status(201).json(data);
+  } catch (error) {
+    console.error('Create internship error:', error);
+    res.status(500).json({ error: "Failed to create internship" });
+  }
 });
 
 // Public routes - anyone can view internships
 router.get("/", async (req, res) => {
   try {
     const data = await Internship.find();
-    res.json(data).status(200);
+    res.status(200).json(data);
   } catch (error) {
-    console.log(error);
-    res.status(404).json({ error: "internal server error" });
+    console.error('Fetch internships error:', error);
+    res.status(500).json({ error: "Failed to fetch internships" });
   }
 });
 
@@ -44,12 +45,12 @@ router.get("/:id", async (req, res) => {
   try {
     const data = await Internship.findById(id);
     if (!data) {
-      res.status(404).json({ error: "internship not found" });
+      return res.status(404).json({ error: "Internship not found" });
     }
-    res.json(data).status(200);
+    res.status(200).json(data);
   } catch (error) {
-    console.log(error);
-    res.status(404).json({ error: "internal server error" });
+    console.error('Fetch internship by ID error:', error);
+    res.status(500).json({ error: "Failed to fetch internship" });
   }
 });
 

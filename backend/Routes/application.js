@@ -23,8 +23,8 @@ router.get("/user/:userIdentifier", async (req, res) => {
     
     res.status(200).json(data);
   } catch (error) {
-    console.log("Error in user applications route:", error);
-    res.status(500).json({ error: "internal server error" });
+    console.error("Error in user applications route:", error);
+    res.status(500).json({ error: "Failed to fetch user applications" });
   }
 });
 
@@ -32,10 +32,10 @@ router.get("/user/:userIdentifier", async (req, res) => {
 router.get("/", authMiddleware(['admin']), async (req, res) => {
   try {
     const data = await application.find();
-    res.json(data).status(200);
+    res.status(200).json(data);
   } catch (error) {
-    console.log(error);
-    res.status(404).json({ error: "internal server error" });
+    console.error('Fetch all applications error:', error);
+    res.status(500).json({ error: "Failed to fetch applications" });
   }
 });
 
@@ -44,12 +44,12 @@ router.get("/:id", authMiddleware(['admin']), async (req, res) => {
   try {
     const data = await application.findById(id);
     if (!data) {
-      res.status(404).json({ error: "application not found" });
+      return res.status(404).json({ error: "Application not found" });
     }
-    res.json(data).status(200);
+    res.status(200).json(data);
   } catch (error) {
-    console.log(error);
-    res.status(404).json({ error: "internal server error" });
+    console.error('Fetch application by ID error:', error);
+    res.status(500).json({ error: "Failed to fetch application" });
   }
 });
 

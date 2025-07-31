@@ -5,35 +5,38 @@ const { authMiddleware } = require("./auth");
 
 // Protected route - require admin authentication for creating jobs
 router.post("/", authMiddleware(['admin']), async (req, res) => {
-  const jobdata = new Job({
-    title: req.body.title,
-    company: req.body.company,
-    location: req.body.location,
-    Experience: req.body.Experience,
-    category: req.body.category,
-    aboutCompany: req.body.aboutCompany,
-    aboutJob: req.body.aboutJob,
-    whoCanApply: req.body.whoCanApply,
-    perks: req.body.perks,
-    AdditionalInfo: req.body.AdditionalInfo,
-    CTC: req.body.CTC,
-    StartDate: req.body.StartDate,
-  });
-  await jobdata.save().then((data)=>{
-    res.send(data)
-  }).catch((error)=>{
-    console.log(error)
-  })
+  try {
+    const jobdata = new Job({
+      title: req.body.title,
+      company: req.body.company,
+      location: req.body.location,
+      Experience: req.body.Experience,
+      category: req.body.category,
+      aboutCompany: req.body.aboutCompany,
+      aboutJob: req.body.aboutJob,
+      whoCanApply: req.body.whoCanApply,
+      perks: req.body.perks,
+      AdditionalInfo: req.body.AdditionalInfo,
+      CTC: req.body.CTC,
+      StartDate: req.body.StartDate,
+    });
+    
+    const data = await jobdata.save();
+    res.status(201).json(data);
+  } catch (error) {
+    console.error('Create job error:', error);
+    res.status(500).json({ error: "Failed to create job" });
+  }
 });
 
 // Public routes - anyone can view jobs
 router.get("/", async (req, res) => {
   try {
     const data = await Job.find();
-    res.json(data).status(200);
+    res.status(200).json(data);
   } catch (error) {
-    console.log(error);
-    res.status(404).json({ error: "internal server error" });
+    console.error('Fetch jobs error:', error);
+    res.status(500).json({ error: "Failed to fetch jobs" });
   }
 });
 
@@ -42,12 +45,12 @@ router.get("/:id", async (req, res) => {
   try {
     const data = await Job.findById(id);
     if (!data) {
-      res.status(404).json({ error: "Jobs not found" });
+      return res.status(404).json({ error: "Job not found" });
     }
-    res.json(data).status(200);
+    res.status(200).json(data);
   } catch (error) {
-    console.log(error);
-    res.status(404).json({ error: "internal server error" });
+    console.error('Fetch job by ID error:', error);
+    res.status(500).json({ error: "Failed to fetch job" });
   }
 });
 
